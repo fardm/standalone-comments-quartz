@@ -23,7 +23,6 @@ const NAV_ITEMS = [
     { key: 'all',            label: 'All Comments',   icon: 'message-square' },
     { key: 'subscriptions',  label: 'Subscriptions',  icon: 'users' },
     { key: 'post-reactions', label: 'Post Reactions', icon: 'smile' },
-    { key: 'posts',          label: 'Posts',          icon: 'file-text' },
     { key: 'analytics',      label: 'Analytics',      icon: 'bar-chart-2' },
     { key: 'settings',       label: 'Settings',       icon: 'settings', isParent: true, children: [
         { key: 'settings-general',       label: 'General' },
@@ -634,7 +633,7 @@ VIEWS['all'] = {
         let replyingToId = null;
         let replyingToPageUrl = null;
 
-        function showReplyForm(commentId, pageUrl) {
+        async function showReplyForm(commentId, pageUrl) {
             replyingToId = commentId;
             replyingToPageUrl = pageUrl;
             // Hide any other open reply forms
@@ -643,6 +642,20 @@ VIEWS['all'] = {
             });
             document.getElementById(`reply-form-${commentId}`).style.display = 'block';
             document.getElementById(`reply-content-${commentId}`).focus();
+
+            // Fetch admin info to prepopulate
+            try {
+                const r = await fetch(`${API_URL}?action=get_settings`, { credentials: 'include' });
+                const d = await r.json();
+                if (r.ok && d.settings) {
+                    const s = d.settings;
+                    if (s.reply_admin_name) document.getElementById(`reply-name-${commentId}`).value = s.reply_admin_name;
+                    if (s.reply_admin_email) document.getElementById(`reply-email-${commentId}`).value = s.reply_admin_email;
+                    if (s.reply_admin_website) document.getElementById(`reply-url-${commentId}`).value = s.reply_admin_website;
+                }
+            } catch (e) {
+                // Silently fail, just leave fields empty
+            }
         }
 
         function hideReplyForm(commentId) {
@@ -726,318 +739,6 @@ VIEWS['all'] = {
 
         hoistToWindow({ applyFilters, applyStatusFilter, clearFilters, moderateComment, deleteComment, changePage, startCommentEdit, showReplyForm, hideReplyForm, submitReply });
         loadDashboard();
-    },
-};
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// POSTS SUMMARY
-// ─────────────────────────────────────────────────────────────────────────────
-VIEWS['posts'] = {
-    title: 'Posts',
-    css: `
-        .stat-card.clickable { cursor:pointer; transition:transform .1s,box-shadow .1s; }
-        .stat-card.clickable:hover { transform:translateY(-2px); box-shadow:0 4px 8px rgba(0,0,0,.15); }
-        .controls { background:var(--on-background); padding:1.25rem 1.5rem; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.1); margin-bottom:1.5rem; display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap; }
-        .control-group { display:flex; flex-direction:column; gap:.35rem; flex:1; min-width:180px; }
-        .control-group label { font-size:.85rem; color:#555; margin-bottom:0; }
-        .control-group input,.control-group select { padding:.6rem .75rem; font-size:.95rem; }
-        .search-wrapper { position:relative; flex:2; min-width:250px; }
-        .posts-section { background:var(--on-background); border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,.1); overflow:hidden; }
-        .posts-section-header { padding:1.25rem 1.5rem; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; }
-        .posts-section-header h2 { margin:0; font-size:1.1rem; }
-        .result-count { color:#666; font-size:.9rem; }
-        table { width:100%; border-collapse:collapse; font-size:.9rem; }
-        thead th { background:var(--light); padding:.75rem 1rem; text-align:left; font-weight:600; color:var(--body-text); border-bottom:2px solid #e9ecef; white-space:nowrap; }
-        thead th.sortable { cursor:pointer; user-select:none; }
-        thead th.sortable:hover { background:var(--lightgray); color:#4a90e2; }
-        thead th.sort-active { color:#4a90e2; }
-        thead th .sort-arrow { display:inline-block; margin-left:.3rem; opacity:.4; font-size:.75rem; }
-        thead th.sort-active .sort-arrow { opacity:1; }
-        tbody tr { border-bottom:1px solid #f0f0f0; transition:background .1s; }
-        tbody tr:last-child { border-bottom:none; }
-        tbody tr:hover { background:var(--light); }
-        tbody tr.spam-magnet { background:#fff8f8; }
-        tbody tr.spam-magnet:hover { background:#fff0f0; }
-        td { color:var(--body-text); padding:.85rem 1rem; vertical-align:middle; }
-        .url-cell { max-width:320px; }
-        .url-text { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#333; font-size:.88rem; }
-        .url-text a { color:#4a90e2; text-decoration:none; }
-        .url-text a:hover { text-decoration:underline; }
-        .count-breakdown { display:flex; gap:.3rem; flex-wrap:wrap; align-items:center; }
-        .badge-deleted { background:#e2e3e5; color:#383d41; }
-        .spam-pct { display:inline-flex; align-items:center; gap:.3rem; font-weight:600; font-size:.88rem; }
-        .spam-pct.low { color:#28a745; } .spam-pct.medium { color:#e6a817; } .spam-pct.high { color:#dc3545; }
-        .spam-bar-wrap { width:52px; height:5px; background:#eee; border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; }
-        .spam-bar { height:100%; border-radius:3px; }
-        .spam-bar.low { background:#28a745; } .spam-bar.medium { background:#ffc107; } .spam-bar.high { background:#dc3545; }
-        .pagination { padding:1.25rem; border-top:1px solid #eee; margin-top:0; }
-        .pagination button { color:#555; }
-        .pagination button:hover:not(:disabled) { border-color:#4a90e2; color:#4a90e2; background:white; }
-        .pagination button.active { background:#4a90e2; border-color:#4a90e2; color:white; }
-        .pagination button:disabled { opacity:.4; cursor:default; }
-        @media (max-width:900px) {
-            header { flex-direction:column; align-items:flex-start; gap:1rem; padding:1rem; }
-            .nav { width:100%; flex-wrap:wrap; } .nav a { flex:1; min-width:90px; text-align:center; font-size:.9rem; }
-            .stats { grid-template-columns:1fr 1fr; } .controls { flex-direction:column; }
-            .control-group { width:100%; min-width:unset; } .search-wrapper { min-width:unset; }
-            table { font-size:.82rem; } td,thead th { padding:.65rem .6rem; }
-            .url-cell { max-width:180px; } .pagination button { padding:.4rem .75rem; font-size:.85rem; }
-        }`,
-
-    html: () => `
-        <div class="container">
-            <div class="stats" id="stats">
-                <div class="stat-card"><div class="stat-number" id="stat-posts">—</div><div class="stat-label">Total Posts</div></div>
-                <div class="stat-card"><div class="stat-number" id="stat-comments">—</div><div class="stat-label">Total Comments</div></div>
-                <div class="stat-card"><div class="stat-number" id="stat-avg">—</div><div class="stat-label">Avg Comments / Post</div></div>
-                <div class="stat-card clickable" onclick="sortBy('spam_pct')">
-                    <div class="stat-number warning" id="stat-spam">—</div><div class="stat-label">Total Spam</div>
-                </div>
-                <div class="stat-card clickable" onclick="filterSpamMagnets()">
-                    <div class="stat-number danger" id="stat-magnets">—</div><div class="stat-label">Spam Magnets (&gt;50%)</div>
-                </div>
-                <div class="stat-card clickable" onclick="sortBy('pending_count')">
-                    <div class="stat-number warning" id="stat-pending">—</div><div class="stat-label">Total Pending</div>
-                </div>
-            </div>
-            <div class="controls">
-                <div class="search-wrapper control-group">
-                    <label for="search-input">Search posts</label>
-                    <input type="search" id="search-input" placeholder="Filter by URL…" oninput="onSearchInput()">
-                </div>
-                <div class="control-group" style="max-width:220px;">
-                    <label for="sort-select">Sort by</label>
-                    <select id="sort-select" onchange="applySortAndRender()">
-                        <option value="last_comment_at_desc">Most Recent Comment</option>
-                        <option value="total_comments_desc">Most Comments</option>
-                        <option value="approved_count_desc">Most Approved</option>
-                        <option value="pending_count_desc">Most Pending</option>
-                        <option value="spam_count_desc">Most Spam (count)</option>
-                        <option value="spam_pct_desc">Highest Spam %</option>
-                        <option value="unique_authors_desc">Most Unique Authors</option>
-                        <option value="unique_ips_desc">Most Unique IPs</option>
-                        <option value="first_comment_at_asc">Oldest Post First</option>
-                        <option value="last_comment_at_asc">Least Recent Comment</option>
-                    </select>
-                </div>
-                <div class="control-group" style="max-width:180px;">
-                    <label for="filter-spam">Spam filter</label>
-                    <select id="filter-spam" onchange="applySortAndRender()">
-                        <option value="all">All posts</option>
-                        <option value="magnets">Spam magnets (&gt;50%)</option>
-                        <option value="clean">Clean (&lt;10%)</option>
-                        <option value="has_pending">Has pending</option>
-                        <option value="has_spam">Has any spam</option>
-                    </select>
-                </div>
-                <div class="control-group" style="max-width:80px;flex:0;">
-                    <label>&nbsp;</label>
-                    <button class="btn btn-warning" onclick="clearControls()" style="padding:.6rem 1rem;font-size:.9rem;white-space:nowrap;">Clear</button>
-                </div>
-            </div>
-            <div class="posts-section">
-                <div class="posts-section-header">
-                    <h2>Posts with Comments</h2>
-                    <span class="result-count" id="result-count"></span>
-                </div>
-                <div id="posts-table-wrap"><div class="loading">Loading…</div></div>
-                <div class="pagination" id="pagination" style="display:none;"></div>
-            </div>
-        </div>`,
-
-    init({ hoistToWindow }) {
-        let allPosts      = [];
-        let filteredPosts = [];
-        let currentPage   = 1;
-        const PAGE_SIZE   = 25;
-        let searchTimer   = null;
-
-        async function loadPosts() {
-            document.getElementById('posts-table-wrap').innerHTML = '<div class="loading">Loading…</div>';
-            try {
-                const r = await fetch(`${API_URL}?action=posts_summary&_=${Date.now()}`, { credentials: 'include', cache: 'no-store' });
-                const data = await r.json();
-                if (!r.ok) throw new Error(data.error || 'Failed to load');
-                allPosts = data.posts || [];
-                updateSummaryStats(data.summary || {});
-                applySortAndRender();
-            } catch (err) {
-                document.getElementById('posts-table-wrap').innerHTML =
-                    `<div class="message error" style="margin:1rem;">Error: ${escapeHtml(err.message)}</div>`;
-            }
-        }
-
-        function updateSummaryStats(summary) {
-            const posts    = summary.total_posts    ?? allPosts.length;
-            const comments = summary.total_comments ?? 0;
-            document.getElementById('stat-posts').textContent    = fmt(posts);
-            document.getElementById('stat-comments').textContent = fmt(comments);
-            document.getElementById('stat-spam').textContent     = fmt(summary.total_spam    ?? 0);
-            document.getElementById('stat-pending').textContent  = fmt(summary.total_pending ?? 0);
-            document.getElementById('stat-avg').textContent      = posts > 0 ? (comments / posts).toFixed(1) : '0';
-            document.getElementById('stat-magnets').textContent  = fmt(allPosts.filter(p => spamPct(p) > 50).length);
-        }
-
-        function onSearchInput() {
-            clearTimeout(searchTimer);
-            searchTimer = setTimeout(applySortAndRender, 200);
-        }
-
-        function applySortAndRender() {
-            const query      = document.getElementById('search-input').value.trim().toLowerCase();
-            const sortKey    = document.getElementById('sort-select').value;
-            const spamFilter = document.getElementById('filter-spam').value;
-            filteredPosts = allPosts.filter(p => {
-                if (query && !p.page_url.toLowerCase().includes(query)) return false;
-                if (spamFilter === 'magnets'     && spamPct(p) <= 50) return false;
-                if (spamFilter === 'clean'       && spamPct(p) >= 10) return false;
-                if (spamFilter === 'has_pending' && p.pending_count === 0) return false;
-                if (spamFilter === 'has_spam'    && p.spam_count === 0) return false;
-                return true;
-            });
-            const [field, dir] = sortKey.split(/_(?=[^_]+$)/);
-            filteredPosts.sort((a, b) => {
-                if (field === 'spam_pct') return dir === 'asc' ? spamPct(a) - spamPct(b) : spamPct(b) - spamPct(a);
-                if (field === 'last_comment_at' || field === 'first_comment_at') {
-                    const av = a[field] || '', bv = b[field] || '';
-                    return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-                }
-                const av = a[field] ?? 0, bv = b[field] ?? 0;
-                return dir === 'asc' ? av - bv : bv - av;
-            });
-            currentPage = 1;
-            document.getElementById('result-count').textContent =
-                `${fmt(filteredPosts.length)} post${filteredPosts.length !== 1 ? 's' : ''}`;
-            renderTable();
-            renderPagination();
-        }
-
-        function sortBy(key) { document.getElementById('sort-select').value = key + '_desc'; applySortAndRender(); }
-        function filterSpamMagnets() { document.getElementById('filter-spam').value = 'magnets'; applySortAndRender(); }
-        function clearControls() {
-            document.getElementById('search-input').value = '';
-            document.getElementById('sort-select').value  = 'last_comment_at_desc';
-            document.getElementById('filter-spam').value  = 'all';
-            applySortAndRender();
-        }
-
-        function renderTable() {
-            const wrap = document.getElementById('posts-table-wrap');
-            if (filteredPosts.length === 0) { wrap.innerHTML = '<div class="empty-state">No posts match your filters.</div>'; return; }
-            const start = (currentPage - 1) * PAGE_SIZE;
-            const page  = filteredPosts.slice(start, start + PAGE_SIZE);
-            const rows = page.map(p => {
-                const pct      = spamPct(p);
-                const pctCls   = pct >= 50 ? 'high' : pct >= 20 ? 'medium' : 'low';
-                const isMagnet = pct > 50;
-                const pageHref = p.page_url_href || p.page_url;
-                const urlShort = pageHref.replace(/^https?:\/\//, '');
-                return `<tr${isMagnet ? ' class="spam-magnet"' : ''}>
-                    <td class="url-cell"><span class="url-text" title="${escapeHtml(pageHref)}"><a href="${escapeHtml(pageHref)}" target="_blank" rel="noopener">${escapeHtml(urlShort)}</a></span></td>
-                    <td><div class="count-breakdown">
-                        <span class="badge badge-total">${p.total_comments}</span>
-                        ${p.approved_count > 0 ? `<span class="badge badge-approved">${p.approved_count} ok</span>` : ''}
-                        ${p.pending_count  > 0 ? `<span class="badge badge-pending">${p.pending_count} pend</span>` : ''}
-                        ${p.spam_count     > 0 ? `<span class="badge badge-spam">${p.spam_count} spam</span>` : ''}
-                        ${p.deleted_count  > 0 ? `<span class="badge badge-deleted">${p.deleted_count} del</span>` : ''}
-                    </div></td>
-                    <td><span class="spam-pct ${pctCls}"><span class="spam-bar-wrap"><span class="spam-bar ${pctCls}" style="width:${Math.min(pct,100)}%"></span></span>${pct}%</span></td>
-                    <td class="num-cell">${p.unique_authors}</td>
-                    <td class="num-cell">${p.unique_ips}</td>
-                    <td class="num-cell">${p.avg_length > 0 ? p.avg_length : '—'}</td>
-                    <td class="num-cell">${p.total_reactions > 0 ? p.total_reactions : '—'}</td>
-                    <td class="date-cell">${formatDateRelative(p.last_comment_at)}</td>
-                    <td class="date-cell">${formatDateRelative(p.first_comment_at)}</td>
-                    <td class="actions-cell"><a href="#all" onclick="navigateToComments('${escapeHtml(p.page_url)}')" class="btn btn-primary btn-sm">Comments</a></td>
-                </tr>`;
-            }).join('');
-            wrap.innerHTML = `<table><thead><tr>
-                <th class="sortable" onclick="cycleSortCol('last_comment_at')">Post URL <span class="sort-arrow">↕</span></th>
-                <th>Counts</th>
-                <th class="sortable" onclick="cycleSortCol('spam_pct')">Spam % <span class="sort-arrow">↕</span></th>
-                <th class="sortable num-cell" onclick="cycleSortCol('unique_authors')">Authors <span class="sort-arrow">↕</span></th>
-                <th class="sortable num-cell" onclick="cycleSortCol('unique_ips')">IPs <span class="sort-arrow">↕</span></th>
-                <th class="num-cell" title="Average comment length">Avg Len</th>
-                <th class="num-cell" title="Post-level reactions">React.</th>
-                <th class="sortable date-cell" onclick="cycleSortCol('last_comment_at')">Last Comment <span class="sort-arrow">↕</span></th>
-                <th class="sortable date-cell" onclick="cycleSortCol('first_comment_at')">First Comment <span class="sort-arrow">↕</span></th>
-                <th></th>
-            </tr></thead><tbody>${rows}</tbody></table>`;
-            const sortKey = document.getElementById('sort-select').value;
-            const [activeField] = sortKey.split(/_(?=[^_]+$)/);
-            wrap.querySelectorAll('thead th.sortable').forEach(th => {
-                const col = th.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-                if (col === activeField) {
-                    th.classList.add('sort-active');
-                    const arrow = th.querySelector('.sort-arrow');
-                    if (arrow) arrow.textContent = sortKey.endsWith('_asc') ? '↑' : '↓';
-                }
-            });
-        }
-
-        function navigateToComments(pageUrl) {
-            // Set a flag read by the 'all' view on init to pre-fill the filter
-            sessionStorage.setItem('all_filter_url', pageUrl);
-        }
-
-        function cycleSortCol(field) {
-            const select = document.getElementById('sort-select');
-            const [curField, curDir] = select.value.split(/_(?=[^_]+$)/);
-            select.value = field + (curField === field && curDir === 'desc' ? '_asc' : '_desc');
-            applySortAndRender();
-        }
-
-        function renderPagination() {
-            const total = filteredPosts.length;
-            const pages = Math.ceil(total / PAGE_SIZE);
-            const pgEl  = document.getElementById('pagination');
-            if (!pgEl) return;
-            if (pages <= 1) { pgEl.style.display = 'none'; return; }
-            pgEl.style.display = 'flex';
-            const btns = [];
-            btns.push(`<button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>`);
-            const range = pageRange(currentPage, pages);
-            let prev = null;
-            for (const p of range) {
-                if (prev !== null && p - prev > 1) btns.push('<span class="page-info">…</span>');
-                btns.push(`<button onclick="changePage(${p})" class="${p === currentPage ? 'active' : ''}">${p}</button>`);
-                prev = p;
-            }
-            btns.push(`<button onclick="changePage(${currentPage + 1})" ${currentPage === pages ? 'disabled' : ''}>Next ›</button>`);
-            btns.push(`<span class="page-info">${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, total)} of ${fmt(total)}</span>`);
-            pgEl.innerHTML = btns.join('');
-        }
-
-        function changePage(n) {
-            const pages = Math.ceil(filteredPosts.length / PAGE_SIZE);
-            if (n < 1 || n > pages) return;
-            currentPage = n; renderTable(); renderPagination();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        function pageRange(cur, total) {
-            const delta = 2, pages = [];
-            for (let i = 1; i <= total; i++) {
-                if (i === 1 || i === total || (i >= cur - delta && i <= cur + delta)) pages.push(i);
-            }
-            return pages;
-        }
-
-        function spamPct(p) { return p.total_comments ? Math.round((p.spam_count / p.total_comments) * 100) : 0; }
-        function fmt(n) { return Number(n).toLocaleString(); }
-        function formatDateRelative(dt) {
-            if (!dt) return '—';
-            const d = new Date(dt.replace(' ', 'T') + 'Z'), diff = (Date.now() - d) / 1000;
-            if (diff < 60)     return 'just now';
-            if (diff < 3600)   return Math.floor(diff / 60)    + 'm ago';
-            if (diff < 86400)  return Math.floor(diff / 3600)  + 'h ago';
-            if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
-            return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-        }
-
-        hoistToWindow({ applySortAndRender, sortBy, filterSpamMagnets, clearControls, cycleSortCol, changePage, onSearchInput, navigateToComments });
-        loadPosts();
     },
 };
 
@@ -1575,6 +1276,29 @@ VIEWS['settings-general'] = {
                     </div>
                 </div>
             </div>
+            <div class="util-card" style="margin-top: 1.5rem;">
+                <div class="util-card-header"><span class="icon">👤</span><h2>Admin Information</h2></div>
+                <div class="util-card-body">
+                    <p>These values are used as the admin identity when replying to comments.</p>
+                    <div id="admin-info-message"></div>
+                    <div class="setting-row">
+                        <div class="setting-label"><strong>Name</strong></div>
+                        <input type="text" id="setting-admin-name" class="themed-control" style="flex:1 1 250px;">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label"><strong>Email</strong></div>
+                        <input type="email" id="setting-admin-email-reply" class="themed-control" style="flex:1 1 250px;">
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-label"><strong>Website</strong><span>(optional)</span></div>
+                        <input type="url" id="setting-admin-website" class="themed-control" style="flex:1 1 250px;">
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <button class="btn btn-primary" onclick="saveAdminInfo()">Save Admin Info</button>
+                    </div>
+                </div>
+            </div>
+
         </div>
     `,
     init({ hoistToWindow }) {
@@ -1586,6 +1310,10 @@ VIEWS['settings-general'] = {
                 const s = d.settings;
                 document.getElementById('setting-require-moderation').checked  = (s.require_moderation  === 'true');
                 document.getElementById('setting-comment-sort-order').value     = s.comment_sort_order === 'desc' ? 'desc' : 'asc';
+
+                document.getElementById('setting-admin-name').value = s.reply_admin_name || '';
+                document.getElementById('setting-admin-email-reply').value = s.reply_admin_email || '';
+                document.getElementById('setting-admin-website').value = s.reply_admin_website || '';
             } catch (e) { console.error('Settings load failed', e); }
         }
 
@@ -1607,6 +1335,9 @@ VIEWS['settings-general'] = {
                     enable_notifications: current.enable_notifications || 'false',
                     admin_email:          current.admin_email || '',
                     comment_sort_order:   document.getElementById('setting-comment-sort-order').value,
+                    reply_admin_name:     current.reply_admin_name || '',
+                    reply_admin_email:    current.reply_admin_email || '',
+                    reply_admin_website:  current.reply_admin_website || '',
                 };
 
                 const r = await fetch(`${API_URL}?action=save_settings`, {
@@ -1621,7 +1352,34 @@ VIEWS['settings-general'] = {
             } catch (e) { msgEl.innerHTML = '<div class="message error">Network error</div>'; }
         }
 
-        hoistToWindow({ saveSettings });
+
+        async function saveAdminInfo() {
+            const msgEl = document.getElementById('admin-info-message');
+            await AdminAuth.ensureCsrfToken();
+            try {
+                const g = await fetch(`${API_URL}?action=get_settings`, { credentials: 'include' });
+                const current = (await g.json()).settings || {};
+
+                const payload = {
+                    ...current,
+                    csrf_token: AdminAuth.getCsrfToken(),
+                    reply_admin_name: document.getElementById('setting-admin-name').value.trim(),
+                    reply_admin_email: document.getElementById('setting-admin-email-reply').value.trim(),
+                    reply_admin_website: document.getElementById('setting-admin-website').value.trim()
+                };
+
+                const r = await fetch(`${API_URL}?action=save_settings`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include', body: JSON.stringify(payload),
+                });
+                const d = await r.json();
+                if (r.ok) {
+                    msgEl.innerHTML = '<div class="message success">Admin info saved.</div>';
+                    setTimeout(() => { if (msgEl) msgEl.innerHTML = ''; }, 2500);
+                } else { msgEl.innerHTML = `<div class="message error">${d.error}</div>`; }
+            } catch (e) { msgEl.innerHTML = '<div class="message error">Network error</div>'; }
+        }
+        hoistToWindow({ saveSettings, saveAdminInfo });
         loadSettings();
     }
 };

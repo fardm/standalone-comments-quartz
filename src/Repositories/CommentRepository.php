@@ -389,42 +389,6 @@ class CommentRepository extends BaseRepository
         return $stmt->fetchAll();
     }
 
-    /**
-     * Get posts summary (aggregated by page_url)
-     */
-    public function getPostsSummary(?string $search = null): array
-    {
-        $where = $search ? 'WHERE c.page_url LIKE ?' : '';
-        $params = $search ? ['%' . $search . '%'] : [];
-        
-        $stmt = $this->prepare("
-            SELECT
-                c.page_url,
-                COUNT(*)                                                        AS total_comments,
-                SUM(CASE WHEN c.status = 'approved' THEN 1 ELSE 0 END)         AS approved_count,
-                SUM(CASE WHEN c.status = 'pending'  THEN 1 ELSE 0 END)         AS pending_count,
-                SUM(CASE WHEN c.status = 'spam'     THEN 1 ELSE 0 END)         AS spam_count,
-                SUM(CASE WHEN c.status = 'deleted'  THEN 1 ELSE 0 END)         AS deleted_count,
-                MIN(c.created_at)                                               AS first_comment_at,
-                MAX(c.created_at)                                               AS last_comment_at,
-                COUNT(DISTINCT c.author_email)                                  AS unique_authors,
-                COUNT(DISTINCT c.ip_address)                                    AS unique_ips,
-                ROUND(AVG(LENGTH(c.content)))                                   AS avg_length,
-                COALESCE(pr.total_reactions, 0)                                 AS total_reactions
-            FROM comments c
-            LEFT JOIN (
-                SELECT page_url, COUNT(*) AS total_reactions
-                FROM post_reactions
-                GROUP BY page_url
-            ) pr ON c.page_url = pr.page_url
-            $where
-            GROUP BY c.page_url
-            ORDER BY last_comment_at DESC
-        ");
-        
-        $stmt->execute($params);
-        return $stmt->fetchAll();
-    }
 
     /**
      * Get analytics data

@@ -60,41 +60,4 @@ class AnalyticsService
         ];
     }
 
-    /**
-     * Get posts summary for the admin posts page
-     */
-    public function getPostsSummary(?string $search = null): array
-    {
-        $posts = $this->commentRepo->getPostsSummary($search);
-
-        foreach ($posts as &$post) {
-            $post['total_comments']  = (int)$post['total_comments'];
-            $post['approved_count']  = (int)$post['approved_count'];
-            $post['pending_count']   = (int)$post['pending_count'];
-            $post['spam_count']      = (int)$post['spam_count'];
-            $post['deleted_count']   = (int)$post['deleted_count'];
-            $post['unique_authors']  = (int)$post['unique_authors'];
-            $post['unique_ips']      = (int)$post['unique_ips'];
-            $post['avg_length']      = (int)$post['avg_length'];
-            $post['total_reactions'] = (int)$post['total_reactions'];
-        }
-        unset($post);
-
-        UrlHelper::enrichPageUrlHref($posts);
-
-        $totalPosts    = count($posts);
-        $totalComments = array_sum(array_column($posts, 'total_comments'));
-        $totalSpam     = array_sum(array_column($posts, 'spam_count'));
-        $totalPending  = array_sum(array_column($posts, 'pending_count'));
-
-        return [
-            'posts'   => $posts,
-            'summary' => [
-                'total_posts'    => $totalPosts,
-                'total_comments' => $totalComments,
-                'total_spam'     => $totalSpam,
-                'total_pending'  => $totalPending,
-            ],
-        ];
-    }
 }

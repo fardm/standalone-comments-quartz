@@ -140,9 +140,6 @@ class Router
             $method === 'GET'  && $action === 'analytics'
                 => $this->admin->analytics($request),
 
-            $method === 'GET'  && $action === 'posts_summary'
-                => $this->admin->postsSummary($request),
-
             $method === 'GET'  && $action === 'db_stats'
                 => $this->admin->dbStats($request),
 

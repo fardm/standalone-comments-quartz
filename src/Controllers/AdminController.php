@@ -44,17 +44,6 @@ class AdminController
         return Response::json($this->analyticsService->getAnalytics());
     }
 
-    // GET ?action=posts_summary  (admin)
-    public function postsSummary(Request $request): Response
-    {
-        if (!$this->authService->isAdmin()) {
-            return Response::unauthorized();
-        }
-
-        $search = trim($request->query('search', ''));
-        return Response::json($this->analyticsService->getPostsSummary($search ?: null));
-    }
-
     // GET ?action=db_stats  (admin)
     public function dbStats(Request $request): Response
     {
