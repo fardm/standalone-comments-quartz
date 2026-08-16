@@ -22,9 +22,15 @@ const app = new Hono<{ Bindings: Bindings }>()
 
 app.use('*', async (c, next) => {
   const allowedOrigins = c.env.ALLOWED_ORIGINS || '*'
+  const originList = allowedOrigins.split(',').map(o => o.trim())
 
   const corsMiddleware = cors({
-    origin: allowedOrigins === '*' ? '*' : allowedOrigins.split(',').map(o => o.trim()),
+    origin: (origin) => {
+      if (allowedOrigins === '*') {
+        return origin || '*'
+      }
+      return originList.includes(origin) ? origin : originList[0]
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
     credentials: true,
@@ -33,7 +39,18 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next)
 })
 
-app.get('/', (c) => c.text('Cloudflare Comments API is running.'))
+app.get('/', (c) => c.json({ status: 'ok', message: 'Cloudflare Comments API is running.' }))
+
+app.get('/health', (c) => c.json({ status: 'ok' }))
+
+app.onError((err, c) => {
+  console.error(err)
+  return c.json({ error: 'Internal Server Error', message: err.message }, 500)
+})
+
+app.notFound((c) => {
+  return c.json({ error: 'Not Found', message: 'The requested route does not exist.' }, 404)
+})
 
 // The single endpoint to match the old api.php routing logic
 app.all('/api.php', async (c) => {
@@ -42,7 +59,7 @@ app.all('/api.php', async (c) => {
 
   const db = c.env.DB
 
-  const auth = new AuthService(db)
+  const auth = new AuthService(db, c.env.ADMIN_PASSWORD_HASH)
   const comments = new CommentService(db)
   const reactions = new ReactionService(db)
   const admin = new AdminService(db)

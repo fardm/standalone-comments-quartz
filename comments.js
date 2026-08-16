@@ -6,6 +6,14 @@
 const COMMENTS_DEFAULT_LANGUAGE = 'en';
 
 function getCommentsAssetBaseUrl(apiUrl) {
+    if (window.COMMENTS_CONFIG && window.COMMENTS_CONFIG.assetUrl) {
+        return window.COMMENTS_CONFIG.assetUrl;
+    }
+    const currentScript = document.currentScript;
+    if (currentScript && currentScript.src) {
+        const url = new URL(currentScript.src);
+        return url.origin + url.pathname.replace(/\/comments\.js$/, '');
+    }
     const url = new URL(apiUrl, window.location.href);
     const path = url.pathname.replace(/\/api\.php$/, '');
     return url.origin + path;
